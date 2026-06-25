@@ -1,0 +1,147 @@
+# =============================================================================
+# route53_errors.yaml
+# -----------------------------------------------------------------------------
+# Curated reference of Route53-specific errors and misconfigurations. This is
+# the primary focus of Phase 1 monitoring (route53/ folder). Used to ground the
+# AI agent's analysis with high-signal, domain-specific patterns.
+# =============================================================================
+
+errors:
+  - id: R53001
+    title: "Alias record cannot set TTL"
+    signature: '("ttl": conflicts with alias|ttl.*alias)'
+    stage: validate/plan
+    category: route53-alias
+    cause: >-
+      An `aws_route53_record` with an `alias {}` block also specifies `ttl`
+      and/or `records`. Alias records derive TTL from the target and must not
+      set these.
+    fix: |
+      Remove `ttl` and `records` when using `alias`:
+      ```hcl
+      resource "aws_route53_record" "app" {
+        zone_id = aws_route53_zone.primary.zone_id
+        name    = "app.example.com"
+        type    = "A"
+
+        alias {
+          name                   = aws_lb.this.dns_name
+          zone_id                = aws_lb.this.zone_id
+          evaluate_target_health = true
+        }
+      }
+      ```
+
+  - id: R53002
+    title: "Missing zone_id"
+    signature: '(Missing required argument.*zone_id|zone_id.*required)'
+    stage: validate
+    category: route53-required
+    cause: >-
+      `aws_route53_record` was declared without `zone_id`, which is mandatory.
+    fix: >-
+      Set `zone_id = aws_route53_zone.<name>.zone_id` (or a data source / the
+      hosted zone ID string).
+
+  - id: R53003
+    title: "Non-alias record missing records or ttl"
+    signature: '(Missing required argument.*records|Missing required argument.*ttl)'
+    stage: validate
+    category: route53-required
+    cause: >-
+      A standard (non-alias) record must define both `ttl` and `records`.
+    fix: |
+      Provide both:
+      ```hcl
+      resource "aws_route53_record" "www" {
+        zone_id = aws_route53_zone.primary.zone_id
+        name    = "www.example.com"
+        type    = "CNAME"
+        ttl     = 300
+        records = ["app.example.com"]
+      }
+      ```
+
+  - id: R53004
+    title: "Invalid record type"
+    signature: 'expected type to be one of'
+    stage: validate
+    category: route53-type
+    cause: >-
+      The `type` is not one of the supported DNS record types (A, AAAA, CAA,
+      CNAME, DS, MX, NAPTR, NS, PTR, SOA, SPF, SRV, TXT).
+    fix: "Correct `type` to a valid, uppercase DNS record type."
+
+  - id: R53005
+    title: "Hosted zone not found"
+    signature: '(NoSuchHostedZone|Hosted zone not found)'
+    stage: plan
+    category: route53-reference
+    cause: >-
+      The referenced hosted zone ID does not exist, or a data source filter for
+      the zone returned no/multiple matches.
+    fix: >-
+      Verify the hosted zone exists in the account/region. For data sources use
+      `name` (with a trailing dot, e.g. "example.com.") and `private_zone` to
+      disambiguate.
+
+  - id: R53006
+    title: "CNAME at zone apex"
+    signature: '(InvalidChangeBatch.*CNAME|RRSet.*apex)'
+    stage: apply
+    category: route53-dns-rules
+    cause: >-
+      A CNAME record was created at the zone apex (root domain), which DNS
+      forbids.
+    fix: >-
+      Use an A/AAAA alias record at the apex pointing to the AWS target
+      (ALB/CloudFront/S3) instead of a CNAME.
+
+  - id: R53007
+    title: "Conflicting resource record sets"
+    signature: '(InvalidChangeBatch|it already exists|but it already exists)'
+    stage: apply
+    category: route53-conflict
+    cause: >-
+      A record set with the same name+type already exists in the zone and is
+      not managed by this Terraform state.
+    fix: >-
+      Import the existing record (`terraform import`), use
+      `allow_overwrite = true` deliberately, or remove the conflicting record.
+
+  - id: R53008
+    title: "Trailing dot / FQDN mismatch"
+    signature: '(InvalidChangeBatch.*FQDN|name.*not.*valid)'
+    stage: apply
+    category: route53-name
+    cause: >-
+      The record `name` is malformed (double domain suffix, missing/extra
+      trailing dot).
+    fix: >-
+      Use the bare subdomain or fully-qualified name consistently. Terraform
+      normalizes names, so avoid manually appending the zone twice
+      (e.g. "www.example.com.example.com").
+
+  - id: R53009
+    title: "Health check association invalid"
+    signature: '(InvalidInput.*health check|health_check_id)'
+    stage: plan/apply
+    category: route53-healthcheck
+    cause: >-
+      A record references a `health_check_id` that does not exist or is used
+      with an incompatible routing policy.
+    fix: >-
+      Ensure the `aws_route53_health_check` is declared and that the routing
+      policy (failover/weighted/latency) supports health checks.
+
+  - id: R53010
+    title: "Delegation set / NS mismatch"
+    signature: '(DelegationSetNotAvailable|NS records)'
+    stage: apply
+    category: route53-delegation
+    cause: >-
+      NS records or delegation set configuration conflict with the
+      auto-created zone NS records.
+    fix: >-
+      Avoid manually managing the apex NS/SOA records created by AWS unless
+      intentionally overriding the delegation set.

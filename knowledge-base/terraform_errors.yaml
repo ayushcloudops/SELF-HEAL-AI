@@ -1,0 +1,133 @@
+# =============================================================================
+# terraform_errors.yaml
+# -----------------------------------------------------------------------------
+# Curated reference of common Terraform CLI / HCL errors used to ground the AI
+# agent's root cause analysis. Each entry maps an error signature to its cause
+# and a recommended fix. The agent matches captured logs against these patterns.
+# =============================================================================
+
+errors:
+  - id: TF001
+    title: "Unsupported argument"
+    signature: 'Error: Unsupported argument'
+    stage: validate
+    category: schema
+    cause: >-
+      An argument was supplied to a resource or module that does not exist in
+      the provider schema. Usually a typo or a deprecated/removed argument.
+    fix: >-
+      Check the resource documentation and remove or rename the argument. For
+      example `zone_id` vs `hosted_zone_id`. Run `terraform validate` locally.
+
+  - id: TF002
+    title: "Missing required argument"
+    signature: 'Error: Missing required argument'
+    stage: validate
+    category: schema
+    cause: >-
+      A required attribute for a resource block was not provided.
+    fix: >-
+      Add the missing argument. Consult the provider docs for which attributes
+      are mandatory (e.g. `aws_route53_record` requires `zone_id`, `name`,
+      `type`).
+
+  - id: TF003
+    title: "Reference to undeclared resource"
+    signature: 'A managed resource ".*" ".*" has not been declared'
+    stage: validate
+    category: reference
+    cause: >-
+      An expression references a resource that is not declared in the
+      configuration (typo in the resource type or name).
+    fix: >-
+      Declare the resource or correct the reference. Verify the resource
+      address matches an existing block exactly.
+
+  - id: TF004
+    title: "Reference to undeclared input variable"
+    signature: 'Reference to undeclared input variable'
+    stage: validate
+    category: variable
+    cause: >-
+      `var.<name>` is referenced but no matching `variable "<name>" {}` block
+      exists.
+    fix: >-
+      Declare the variable in `variables.tf` or correct the variable name.
+
+  - id: TF005
+    title: "Unsupported block type"
+    signature: 'Error: Unsupported block type'
+    stage: validate
+    category: schema
+    cause: >-
+      A nested block name is not valid for the parent resource.
+    fix: >-
+      Remove or rename the block to match the provider schema.
+
+  - id: TF006
+    title: "Invalid HCL syntax"
+    signature: 'Error: (Invalid character|Unclosed configuration block|Argument or block definition required|Missing newline)'
+    stage: fmt/validate
+    category: syntax
+    cause: >-
+      Malformed HCL — missing closing brace, unbalanced quotes, or a stray
+      character.
+    fix: >-
+      Fix the syntax. Run `terraform fmt` and `terraform validate`. The error
+      message points to the exact file and line.
+
+  - id: TF007
+    title: "Format check failed"
+    signature: 'terraform fmt'
+    stage: fmt
+    category: style
+    cause: >-
+      Files are not formatted to canonical style. `terraform fmt -check`
+      returns non-zero and lists the offending files.
+    fix: "Run `terraform fmt -recursive` and commit the result."
+
+  - id: TF008
+    title: "Provider configuration not present"
+    signature: 'Error: Provider configuration not present'
+    stage: plan
+    category: provider
+    cause: >-
+      A resource references a provider (often an aliased one) that is not
+      configured.
+    fix: >-
+      Add the matching `provider` block or remove the `provider = ` reference
+      from the resource.
+
+  - id: TF009
+    title: "Could not load plugin / provider download failure"
+    signature: 'Error: Failed to install provider'
+    stage: init
+    category: init
+    cause: >-
+      `terraform init` could not download a provider — network restriction,
+      wrong source address, or version constraint with no matching release.
+    fix: >-
+      Verify the `required_providers` source and version, check network/proxy
+      access to registry.terraform.io, and re-run `terraform init`.
+
+  - id: TF010
+    title: "Cycle error"
+    signature: 'Error: Cycle'
+    stage: plan
+    category: graph
+    cause: "Two or more resources depend on each other circularly."
+    fix: >-
+      Break the dependency cycle, often by removing an explicit `depends_on`
+      or restructuring references.
+
+  - id: TF011
+    title: "Invalid for_each / count argument"
+    signature: 'Error: Invalid (for_each|count) argument'
+    stage: plan
+    category: meta-argument
+    cause: >-
+      `for_each` was given a value that is not a map/set, or `count` got a
+      value not known until apply (often from an unresolved data source).
+    fix: >-
+      Ensure `for_each` receives a map or set of strings, and that the value is
+      known at plan time. Use `toset(...)` where appropriate.

@@ -1,0 +1,99 @@
+# =============================================================================
+# aws_errors.yaml
+# -----------------------------------------------------------------------------
+# Curated reference of common AWS API / provider errors encountered during
+# `terraform plan` and `terraform apply`. Used to ground the AI agent.
+# =============================================================================
+
+errors:
+  - id: AWS001
+    title: "Access Denied / Unauthorized operation"
+    signature: '(AccessDenied|UnauthorizedOperation|is not authorized to perform)'
+    stage: plan
+    category: iam
+    cause: >-
+      The IAM principal (access key / assumed role) running Terraform lacks the
+      permissions required for the action (e.g. route53:ListHostedZones,
+      route53:ChangeResourceRecordSets).
+    fix: >-
+      Attach an IAM policy granting the missing actions on the relevant
+      resources. The error message names the exact action and ARN. Prefer
+      least-privilege policies scoped to the hosted zone.
+
+  - id: AWS002
+    title: "Invalid credentials / no valid credential sources"
+    signature: '(NoCredentialProviders|no valid credential sources|InvalidClientTokenId|SignatureDoesNotMatch)'
+    stage: plan
+    category: auth
+    cause: >-
+      AWS credentials are missing, expired, or malformed. Common when secrets
+      are not wired into the workflow environment.
+    fix: >-
+      Ensure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_REGION are set
+      via repository secrets, or that an instance profile / OIDC role is
+      available on the runner.
+
+  - id: AWS003
+    title: "Missing region"
+    signature: '(missing required field|could not find region configuration|MissingRegion)'
+    stage: plan
+    category: config
+    cause: "No AWS region was configured for the provider."
+    fix: >-
+      Set `region` in the `provider \"aws\"` block or export AWS_REGION /
+      AWS_DEFAULT_REGION in the runner environment.
+
+  - id: AWS004
+    title: "Throttling / rate exceeded"
+    signature: '(Throttling|RequestLimitExceeded|Rate exceeded)'
+    stage: plan
+    category: throttling
+    cause: "AWS throttled the API calls due to too many requests."
+    fix: >-
+      Retry the operation. Consider `-parallelism=N` to reduce concurrency, and
+      ensure the provider's built-in retry is not disabled.
+
+  - id: AWS005
+    title: "Resource not found"
+    signature: '(NoSuchEntity|NotFound|does not exist)'
+    stage: plan
+    category: reference
+    cause: >-
+      A referenced AWS resource (hosted zone, VPC, security group) does not
+      exist in the account/region, often due to a hard-coded ID or a wrong
+      data source filter.
+    fix: >-
+      Verify the resource ID/name and region. If using a data source, confirm
+      the filter matches exactly one existing resource.
+
+  - id: AWS006
+    title: "Invalid parameter value"
+    signature: '(InvalidParameterValue|ValidationException|InvalidInput)'
+    stage: plan
+    category: validation
+    cause: "A parameter value violates an AWS API constraint."
+    fix: >-
+      Read the message for the specific constraint (length, allowed values,
+      format) and correct the value.
+
+  - id: AWS007
+    title: "Conflicting operation / resource in use"
+    signature: '(ConflictingDomainExists|ResourceInUse|already exists)'
+    stage: apply
+    category: conflict
+    cause: >-
+      A resource with the same identifier already exists or is being modified
+      concurrently.
+    fix: >-
+      Import the existing resource with `terraform import`, or choose a unique
+      name. Avoid concurrent pipelines mutating the same resources.
+
+  - id: AWS008
+    title: "Expired token (assumed role / SSO)"
+    signature: '(ExpiredToken|ExpiredTokenException)'
+    stage: plan
+    category: auth
+    cause: "Temporary STS credentials have expired."
+    fix: >-
+      Refresh the assumed-role/SSO session. For CI, prefer OIDC federation so
+      short-lived credentials are minted per run.
